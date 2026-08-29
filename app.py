@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -88,6 +89,27 @@ def seed_demo(connection: sqlite3.Connection) -> None:
 
 def write_event(connection: sqlite3.Connection, session_id: str, event_type: str, payload: dict, timestamp: str | None = None) -> None:
     connection.execute("INSERT INTO events VALUES (?,?,?,?,?)", (str(uuid.uuid4()), session_id, event_type, json.dumps(payload), timestamp or iso()))
+
+
+# (agent_name, task_description, risk_level, question, owner, log_tail) — a wider pool than the
+# seed data so a long-running demo doesn't just repeat the same five sessions.
+AUTO_QUESTION_POOL: list[tuple[str, str, Risk, str, str, str]] = [
+    ("Billing agent", "Reconcile a discrepancy in last night's invoicing run.", "high", "Should I re-issue the 340 affected invoices automatically?", "Finance ops", "Discrepancy traced to a rounding change in the tax module."),
+    ("Infra agent", "Roll a security patch across the production fleet.", "high", "Restart nodes in batches of 10% or all at once during the maintenance window?", "Platform", "Patch is staged on all nodes; no reboot has been attempted yet."),
+    ("Support triage agent", "Draft a response to a customer escalation about data loss.", "high", "Can I confirm to the customer that backups cover their account?", "Customer Success", "Backup coverage for this account has not been independently verified."),
+    ("Onboarding agent", "Provision accounts for a new enterprise customer.", "medium", "Should this customer get the default seat limit or the negotiated custom one?", "Sales Ops", "Contract terms reference a custom seat count not yet in the provisioning system."),
+    ("Analytics agent", "Prepare the weekly growth metrics summary.", "low", "Should churned trial users be excluded from the activation rate?", "Growth", "Both inclusion and exclusion are defensible; prior reports were inconsistent."),
+    ("Infra agent", "Clean up unused cloud storage buckets.", "high", "Confirm it's safe to delete the 6 buckets with no access in 90 days?", "Platform", "One bucket has a name suggesting it may hold a compliance-related archive."),
+    ("QA agent", "Investigate a flaky end-to-end test suite.", "medium", "Quarantine the flaky tests or block merges until they're fixed?", "Engineering", "3 of 40 tests fail intermittently; failure rate has been stable for a week."),
+    ("Docs agent", "Rewrite the onboarding quickstart guide.", "low", "Should the guide lead with the CLI or the web UI flow?", "Developer Experience", "Usage data slightly favors the web UI for new signups."),
+    ("Vendor agent", "Review a third-party contractor's pull request.", "medium", "Approve merge, or require a second internal review first?", "Engineering", "The change touches authentication middleware but has passing tests."),
+    ("Incident agent", "Investigate a spike in checkout latency.", "high", "Roll back the last deploy or scale up the checkout service first?", "SRE on-call", "Latency began rising within 4 minutes of the last deploy."),
+    ("Marketing agent", "Draft copy for the upcoming release announcement.", "low", "Use the internal codename or the public feature name in the headline?", "Marketing", "Public feature name hasn't been legally cleared yet."),
+    ("Data agent", "Back-fill a corrected exchange-rate table.", "medium", "Re-run affected reports automatically, or flag them for manual review?", "Finance ops", "17 downstream reports depend on this table; some feed external partners."),
+]
+MAX_AUTO_DEMO_WAITING = 12
+
+auto_generate_state = {"enabled": True}
 
 
 def classify_risk(task: str) -> Risk:
@@ -181,6 +203,10 @@ class DemoSessionRequest(BaseModel):
     agent_name: str = "Workspace agent"
 
 
+class AutoGenerateRequest(BaseModel):
+    enabled: bool
+
+
 class ReflexClient:
     """Thin adapter over documented Reflex endpoints; secrets stay in environment."""
     @property
@@ -237,15 +263,18 @@ app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 def startup() -> None:
     initialize()
     app.state.reflex_poll_task = asyncio.create_task(reflex_poll_loop())
+    app.state.auto_generate_task = asyncio.create_task(auto_generate_loop())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
     app.state.reflex_poll_task.cancel()
-    try:
-        await app.state.reflex_poll_task
-    except asyncio.CancelledError:
-        pass
+    app.state.auto_generate_task.cancel()
+    for task in (app.state.reflex_poll_task, app.state.auto_generate_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def reflex_poll_loop() -> None:
@@ -260,6 +289,29 @@ async def reflex_poll_loop() -> None:
         await asyncio.sleep(5)
 
 
+async def auto_generate_loop() -> None:
+    """Keeps the demo queue alive on its own by dropping in a new waiting
+    session every 20-45s, picked from AUTO_QUESTION_POOL, up to a cap so the
+    queue doesn't grow without bound if nobody is answering."""
+    while True:
+        await asyncio.sleep(random.uniform(20, 45))
+        if not auto_generate_state["enabled"]:
+            continue
+        with db() as connection:
+            waiting_demo_count = connection.execute(
+                "SELECT COUNT(*) FROM sessions WHERE status='waiting' AND source='demo'"
+            ).fetchone()[0]
+            if waiting_demo_count >= MAX_AUTO_DEMO_WAITING:
+                continue
+            agent, task, risk, question, owner, log = random.choice(AUTO_QUESTION_POOL)
+            session_id = f"auto-{uuid.uuid4().hex[:8]}"
+            connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                session_id, "demo", f"demo-devbox-{session_id}", agent, task, "waiting", risk,
+                iso(), iso(), question, log, owner, None, iso(),
+            ))
+            write_event(connection, session_id, "question_asked", {"question": question, "auto_generated": True})
+
+
 @app.get("/")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
@@ -267,7 +319,12 @@ def index():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "reflex_configured": reflex.configured, "organization": os.getenv("REFLEX_ORGANIZATION_ID")}
+    return {
+        "ok": True,
+        "reflex_configured": reflex.configured,
+        "organization": os.getenv("REFLEX_ORGANIZATION_ID"),
+        "auto_generate": auto_generate_state["enabled"],
+    }
 
 
 @app.get("/api/queue")
@@ -298,6 +355,12 @@ def create_demo_session(body: DemoSessionRequest):
         ))
         write_event(connection, session_id, "question_asked", {"question": body.question})
     return {"id": session_id}
+
+
+@app.post("/api/demo/auto-generate")
+def set_auto_generate(body: AutoGenerateRequest):
+    auto_generate_state["enabled"] = body.enabled
+    return {"ok": True, "enabled": body.enabled}
 
 
 async def import_reflex_waiting() -> int:

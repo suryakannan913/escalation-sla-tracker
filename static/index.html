@@ -76,6 +76,14 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .add textarea{width:100%;height:75px;margin:6px 0}
 .add select{width:100%;margin-bottom:6px}
 
+.switchrow{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);cursor:pointer;line-height:1.4}
+.switchrow input{position:absolute;opacity:0;width:0;height:0}
+.switchtrack{width:34px;height:20px;background:var(--panel2);border:1px solid var(--line);border-radius:99px;position:relative;flex-shrink:0;transition:background .15s,border-color .15s}
+.switchthumb{position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:var(--muted2);transition:transform .15s,background .15s}
+.switchrow input:checked + .switchtrack{background:rgba(96,165,250,.22);border-color:var(--blue-dim)}
+.switchrow input:checked + .switchtrack .switchthumb{transform:translateX(14px);background:var(--blue)}
+.switchrow input:focus-visible + .switchtrack{outline:2px solid var(--blue-dim);outline-offset:2px}
+
 /* Analytics grid */
 .chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .chartcard{padding:16px 18px}
@@ -162,6 +170,15 @@ button:disabled{opacity:.5;cursor:not-allowed}
         <h3>Reflex</h3>
         <button class="ghost" id="sync">Sync needs-input sessions</button>
         <div class="detail" id="syncmsg">Configure local .env to enable live sync.</div>
+      </div>
+      <div class="section">
+        <h3>Auto-generate</h3>
+        <label class="switchrow" for="autogen">
+          <input type="checkbox" id="autogen" checked>
+          <span class="switchtrack"><span class="switchthumb"></span></span>
+          Keep dropping in a new waiting session every ~20–45s
+        </label>
+        <div class="detail" id="autogenmsg"></div>
       </div>
       <div class="section add">
         <h3>Simulate an agent question</h3>
@@ -436,11 +453,27 @@ $('#sync').onclick = async () => {
   if (r.ok) load();
 };
 
+function setAutogenMessage(enabled) {
+  $('#autogenmsg').textContent = enabled
+    ? 'Adding a new demo session every ~20–45s (up to 12 waiting at once).'
+    : 'Paused — the queue only grows when you add a session yourself.';
+}
+$('#autogen').onchange = async (e) => {
+  const enabled = e.target.checked;
+  setAutogenMessage(enabled);
+  await fetch('/api/demo/auto-generate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+};
+
 (async () => {
   const h = await fetch('/api/health').then((r) => r.json());
   const conn = $('#connection');
   if (h.reflex_configured) { conn.textContent = 'Reflex configured'; conn.classList.remove('demo'); conn.prepend(document.createElement('i')); }
   else { conn.innerHTML = '<i></i>Dashboard demo'; }
+  $('#autogen').checked = h.auto_generate;
+  setAutogenMessage(h.auto_generate);
   load();
   setInterval(load, 2000);
 })().catch(console.error);
