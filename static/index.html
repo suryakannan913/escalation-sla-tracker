@@ -1,5 +1,449 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Escalation SLA Tracker</title><style>
-:root{--bg:#08111f;--panel:#101d31;--line:#263b59;--muted:#9aabc1;--text:#f3f7fb;--blue:#60a5fa;--red:#fb7185;--amber:#fbbf24;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}header,main{max-width:1260px;margin:auto}header{padding:26px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:start}h1{font-size:25px;margin:0}h1 span{color:var(--blue)}p{color:var(--muted)}main{padding:22px}.live{font-size:13px;color:var(--green);font-weight:700}.live:before{content:'● ';}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.metric,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}.metric{padding:16px}.label{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}.metric b{display:block;font-size:29px;margin-top:5px}.red{color:var(--red)}.amber{color:var(--amber)}.green{color:var(--green)}.layout{display:grid;grid-template-columns:1fr 310px;gap:18px}.toolbar{padding:14px;display:flex;gap:9px;border-bottom:1px solid var(--line);align-items:center}.toolbar h2{font-size:16px;margin:0 auto 0 0}input,select,textarea{background:#091525;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px;font:inherit;font-size:13px}input{width:180px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:11px 14px;background:#0b1728}td{padding:14px;border-top:1px solid var(--line);vertical-align:top}.question{font-weight:700;max-width:355px}.detail{font-size:12px;color:var(--muted);margin-top:4px}.pill{display:inline-block;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:800}.high{background:#4a1726;color:#fecdd3}.medium{background:#4c3511;color:#fde68a}.low{background:#133b34;color:#bbf7d0}.sla{font-weight:750}.breached{color:var(--red)}.near{color:var(--amber)}button{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:8px 10px;font-weight:700;cursor:pointer}button.ghost{background:transparent;border:1px solid var(--line)}button:disabled{opacity:.5;cursor:not-allowed}.section{padding:16px;border-bottom:1px solid var(--line)}.section h3{font-size:14px;margin:0 0 10px}.rule{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding:8px 0;color:var(--muted);font-size:13px}.rule b{color:var(--text)}.explain{background:#0b1728;color:var(--muted);font-size:13px;line-height:1.5;padding:11px;border-radius:8px}.empty{padding:45px;text-align:center;color:var(--muted)}.drawer{position:fixed;inset:0 0 0 auto;width:min(500px,100%);padding:24px;background:#0c1728;border-left:1px solid var(--line);box-shadow:-8px 0 40px #0008;transform:translateX(101%);transition:.2s;overflow:auto}.drawer.open{transform:none}.drawer h2{font-size:21px;margin:17px 0 6px}.drawer label{font-size:12px;color:var(--muted);display:block;margin:16px 0 6px}.drawer textarea{width:100%;height:120px;resize:vertical}.actions{display:flex;gap:8px;margin-top:13px}.notice{font-size:12px;color:var(--muted);margin:18px 0}.add textarea{width:100%;height:75px;margin:6px 0}.add select{width:100%;margin-bottom:6px}@media(max-width:850px){.layout{grid-template-columns:1fr}aside{display:none}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:550px){.metrics{grid-template-columns:1fr}input{width:100%}.toolbar{flex-wrap:wrap}table th:nth-child(3),table td:nth-child(3){display:none}}
-</style></head><body><header><div><h1>Escalation <span>SLA Tracker</span></h1><p>One risk-weighted, live queue for agents blocked on human input.</p></div><div class="live" id="connection">Dashboard demo</div></header><main><section class="metrics" id="metrics"></section><section class="layout"><div class="panel"><div class="toolbar"><h2>Human attention queue</h2><select id="risk"><option value="">All risk</option><option>high</option><option>medium</option><option>low</option></select><input id="search" placeholder="Search sessions"></div><div id="queue"></div></div><aside class="panel"><div class="section"><h3>Explainable priority</h3><div class="explain">Every waiting second is multiplied by risk: high ×4, medium ×2, low ×1. A high-risk item therefore overtakes lower-risk work before it silently ages out.</div><div class="rule"><span>High risk</span><b>15 min SLA</b></div><div class="rule"><span>Medium risk</span><b>30 min SLA</b></div><div class="rule"><span>Low risk</span><b>2 hr SLA</b></div></div><div class="section"><h3>Reflex</h3><button class="ghost" id="sync">Sync needs-input sessions</button><div class="detail" id="syncmsg">Configure local .env to enable live sync.</div></div><div class="section add"><h3>Simulate an agent question</h3><textarea id="newq" placeholder="Question the agent asks…"></textarea><select id="newrisk"><option value="high">High risk</option><option value="medium">Medium risk</option><option value="low">Low risk</option></select><button id="add">Add waiting session</button></div></aside></section><p class="notice">Refreshes every 2 seconds. Demo records are local SQLite data; live Reflex sessions are only included after an explicit sync.</p></main><div id="drawer" class="drawer"></div><script>
-const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let data=[];function duration(s){const m=Math.floor(s/60),r=s%60;return m?`${m}m ${r}s`:`${r}s`}function render(){let v=[...data],risk=$('#risk').value,q=$('#search').value.toLowerCase();if(risk)v=v.filter(x=>x.risk_level===risk);if(q)v=v.filter(x=>JSON.stringify(x).toLowerCase().includes(q));let breach=data.filter(x=>x.sla_state==='breached').length,old=Math.max(0,...data.map(x=>x.wait_duration_seconds));$('#metrics').innerHTML=`<div class="metric"><span class="label">Awaiting response</span><b>${data.length}</b></div><div class="metric"><span class="label">SLA breached</span><b class="red">${breach}</b></div><div class="metric"><span class="label">Longest wait</span><b class="amber">${duration(old)}</b></div><div class="metric"><span class="label">Queue risk points</span><b class="green">${data.reduce((n,x)=>n+x.priority_score,0)}</b></div>`;$('#queue').innerHTML=v.length?`<table><thead><tr><th>Risk</th><th>Agent question</th><th>Owner</th><th>Wait / SLA</th><th></th></tr></thead><tbody>${v.map(x=>`<tr><td><span class="pill ${x.risk_level}">${x.risk_level.toUpperCase()}</span><div class="detail">Score ${x.priority_score}</div></td><td><div class="question">${esc(x.last_question||'Input required')}</div><div class="detail">${esc(x.agent_name)} · ${esc(x.id)}</div></td><td>${esc(x.owner)}</td><td><span class="sla ${x.sla_state}">${duration(x.wait_duration_seconds)} / ${x.sla_minutes}m</span><div class="detail ${x.sla_state}">${x.sla_state.replace('_',' ').toUpperCase()}</div></td><td><button onclick="openSession('${x.id}')">Answer</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">No waiting sessions match.</div>'}async function load(){let r=await fetch('/api/queue');data=await r.json();render()}window.openSession=id=>{let x=data.find(i=>i.id===id);$('#drawer').classList.add('open');$('#drawer').innerHTML=`<button class="ghost" onclick="closeDrawer()">← Queue</button><h2>${esc(x.last_question)}</h2><p>${esc(x.agent_name)} · ${esc(x.id)} · ${esc(x.owner)}</p><div class="explain"><b>Task</b><br>${esc(x.task_description)}<br><br><b>Agent context</b><br>${esc(x.log_tail)}</div><label>Answer to agent</label><textarea id="answer" placeholder="Give a clear decision or constraint…"></textarea><label><input type="checkbox" id="slack"> Also notify Slack when configured</label><div class="actions"><button onclick="sendAnswer('${x.id}')">Send answer</button><button class="ghost" onclick="closeDrawer()">Cancel</button></div>`};window.closeDrawer=()=>$('#drawer').classList.remove('open');window.sendAnswer=async id=>{let answer=$('#answer').value.trim();if(!answer)return alert('Enter an answer.');let r=await fetch(`/api/sessions/${id}/answer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answer,notify_slack:$('#slack').checked})});if(!r.ok)return alert((await r.json()).detail||'Unable to deliver answer');closeDrawer();await load()};$('#risk').onchange=render;$('#search').oninput=render;$('#add').onclick=async()=>{let question=$('#newq').value.trim();if(!question)return alert('Enter a question.');let r=await fetch('/api/demo/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,risk_level:$('#newrisk').value,task_description:'Related workspace task awaiting an approval decision.'})});if(!r.ok)return alert('Could not add session');$('#newq').value='';load()};$('#sync').onclick=async()=>{let r=await fetch('/api/integrations/reflex/sync',{method:'POST'}),j=await r.json();$('#syncmsg').textContent=r.ok?`Synced ${j.synced} waiting Reflex agents.`:(j.detail||'Sync failed');if(r.ok)load()};(async()=>{let h=await fetch('/api/health').then(r=>r.json());$('#connection').textContent=h.reflex_configured?'Reflex configured':'Dashboard demo';load();setInterval(load,2000)})().catch(console.error);
-</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Escalation SLA Tracker</title>
+<style>
+:root{
+  --bg:#070d18;--panel:#0f1c30;--panel2:#0b1626;--line:#22344f;--line-soft:#182842;
+  --muted:#8ea0bb;--muted2:#5f7191;--text:#f3f7fb;
+  --blue:#60a5fa;--blue-dim:#3b6cad;--red:#fb7185;--amber:#fbbf24;--green:#4ade80;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+header,main{max-width:1320px;margin:auto}
+header{padding:24px 24px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:linear-gradient(180deg,#0a1526,#070d18)}
+header .brand{display:flex;align-items:center;gap:12px}
+header .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--blue),#2b5fb8);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#04101f;flex-shrink:0}
+h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.2px}
+h1 span{color:var(--blue)}
+header p{margin:2px 0 0;font-size:12.5px}
+p{color:var(--muted)}
+main{padding:22px 24px 40px}
+.live{font-size:12px;color:var(--green);font-weight:700;display:flex;align-items:center;gap:6px;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);padding:6px 11px;border-radius:99px}
+.live i{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
+.live.demo{color:var(--muted);background:rgba(255,255,255,.03);border-color:var(--line)}
+.live.demo i{background:var(--muted2);box-shadow:none}
+
+.sectionhead{display:flex;align-items:baseline;justify-content:space-between;margin:28px 0 12px}
+.sectionhead h2{font-size:14px;margin:0;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:700}
+.sectionhead span{font-size:12px;color:var(--muted2)}
+
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.metrics.secondary{grid-template-columns:repeat(2,1fr);margin-top:12px}
+.metric,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.metric{padding:16px 18px;position:relative;overflow:hidden}
+.metric:before{content:'';position:absolute;inset:0 0 auto 0;height:2px;background:var(--accent,var(--blue-dim))}
+.label{font-size:10.5px;color:var(--muted);letter-spacing:.09em;text-transform:uppercase;font-weight:600}
+.metric b{display:block;font-size:28px;margin-top:6px;font-weight:700;letter-spacing:-.5px}
+.metric .sub{font-size:11.5px;color:var(--muted2);margin-top:3px;display:block}
+.red{color:var(--red)}.amber{color:var(--amber)}.green{color:var(--green)}.blue{color:var(--blue)}
+
+.layout{display:grid;grid-template-columns:1fr 320px;gap:18px;margin-top:20px}
+.toolbar{padding:14px 16px;display:flex;gap:9px;border-bottom:1px solid var(--line);align-items:center}
+.toolbar h2{font-size:14px;margin:0 auto 0 0;text-transform:none;letter-spacing:0;color:var(--text);font-weight:700}
+input,select,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px 10px;font:inherit;font-size:13px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue-dim);outline-offset:1px}
+input{width:180px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--muted);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;padding:11px 14px;background:var(--panel2)}
+td{padding:14px;border-top:1px solid var(--line);vertical-align:top}
+.question{font-weight:650;max-width:355px}
+.detail{font-size:12px;color:var(--muted2);margin-top:4px}
+.pill{display:inline-block;border-radius:99px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.02em}
+.high{background:#4a1726;color:#fecdd3}.medium{background:#4c3511;color:#fde68a}.low{background:#133b34;color:#bbf7d0}
+.sla{font-weight:700}.breached{color:var(--red)}.near{color:var(--amber)}.on_track{color:var(--green)}
+button{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:8px 12px;font-weight:700;cursor:pointer;font-size:13px}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+button:hover{filter:brightness(1.1)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.section{padding:16px;border-bottom:1px solid var(--line)}
+.section:last-child{border-bottom:none}
+.section h3{font-size:13px;margin:0 0 10px;font-weight:700}
+.rule{display:flex;justify-content:space-between;border-top:1px solid var(--line-soft);padding:8px 0;color:var(--muted);font-size:13px}
+.rule:first-of-type{border-top:0}
+.rule b{color:var(--text)}
+.explain{background:var(--panel2);color:var(--muted);font-size:12.5px;line-height:1.55;padding:11px;border-radius:8px}
+.empty{padding:45px;text-align:center;color:var(--muted)}
+.drawer{position:fixed;inset:0 0 0 auto;width:min(500px,100%);padding:24px;background:#0c1728;border-left:1px solid var(--line);box-shadow:-8px 0 40px #0008;transform:translateX(101%);transition:.2s;overflow:auto}
+.drawer.open{transform:none}
+.drawer h2{font-size:20px;margin:17px 0 6px}
+.drawer label{font-size:12px;color:var(--muted);display:block;margin:16px 0 6px}
+.drawer textarea{width:100%;height:120px;resize:vertical}
+.actions{display:flex;gap:8px;margin-top:13px}
+.notice{font-size:12px;color:var(--muted2);margin:18px 0 0}
+.add textarea{width:100%;height:75px;margin:6px 0}
+.add select{width:100%;margin-bottom:6px}
+
+/* Analytics grid */
+.chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.chartcard{padding:16px 18px}
+.chartcard h3{font-size:12.5px;margin:0 0 3px;font-weight:700}
+.chartcard .chartsub{font-size:11.5px;color:var(--muted2);margin:0 0 14px}
+
+/* Bar rows */
+.barrow{display:flex;align-items:center;gap:10px;padding:6px 0}
+.barrow-label{width:96px;font-size:12px;color:var(--muted);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bartrack{flex:1;height:14px;background:var(--panel2);border-radius:4px;overflow:hidden}
+.barfill{height:100%;border-radius:4px;min-width:2px}
+.barrow-value{width:52px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
+.barrow:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
+
+/* Stacked bar */
+.stackbar{display:flex;height:18px;border-radius:4px;overflow:hidden;gap:2px;background:var(--panel2)}
+.stackseg{height:100%;min-width:3px}
+.stacklegend{display:flex;gap:18px;margin-top:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.stacklegend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.stacklegend b{color:var(--text);font-weight:700;margin-left:5px;font-variant-numeric:tabular-nums}
+
+/* Line chart */
+.linewrap{position:relative}
+.linesvg{width:100%;height:150px;display:block;overflow:visible}
+.linegrid{stroke:var(--line-soft);stroke-width:1}
+.linearea{fill:var(--blue);fill-opacity:.1}
+.lineline{fill:none;stroke:var(--blue);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.linecrosshair{stroke:var(--muted2);stroke-width:1;opacity:0;pointer-events:none}
+.linedot{fill:var(--blue);stroke:var(--bg);stroke-width:2;opacity:0;pointer-events:none}
+.linetooltip{position:absolute;pointer-events:none;background:#0c1728;border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:12px;white-space:nowrap;opacity:0;transition:opacity .1s;transform:translate(-50%,-115%)}
+.linetooltip b{font-variant-numeric:tabular-nums;color:var(--text)}
+.linetooltip span{color:var(--muted2)}
+.lineaxis text{font-size:10px;fill:var(--muted2)}
+.chartempty{padding:30px 0;text-align:center;color:var(--muted2);font-size:12.5px}
+
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr}aside{display:none}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .chartgrid{grid-template-columns:1fr}
+}
+@media(max-width:550px){
+  .metrics{grid-template-columns:1fr}.metrics.secondary{grid-template-columns:1fr}
+  input{width:100%}.toolbar{flex-wrap:wrap}
+  table th:nth-child(3),table td:nth-child(3){display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="mark">SLA</div>
+    <div>
+      <h1>Escalation <span>SLA Tracker</span></h1>
+      <p>One risk-weighted, live queue for agents blocked on human input.</p>
+    </div>
+  </div>
+  <div class="live demo" id="connection"><i></i>Dashboard demo</div>
+</header>
+<main>
+  <section class="metrics" id="metrics"></section>
+  <section class="metrics secondary" id="metrics2"></section>
+
+  <section class="layout">
+    <div class="panel">
+      <div class="toolbar">
+        <h2>Human attention queue</h2>
+        <select id="risk">
+          <option value="">All risk</option>
+          <option>high</option><option>medium</option><option>low</option>
+        </select>
+        <input id="search" placeholder="Search sessions">
+      </div>
+      <div id="queue"></div>
+    </div>
+    <aside class="panel">
+      <div class="section">
+        <h3>Explainable priority</h3>
+        <div class="explain">Every waiting second is multiplied by risk: high ×4, medium ×2, low ×1. A high-risk item therefore overtakes lower-risk work before it silently ages out.</div>
+        <div class="rule"><span>High risk</span><b>15 min SLA</b></div>
+        <div class="rule"><span>Medium risk</span><b>30 min SLA</b></div>
+        <div class="rule"><span>Low risk</span><b>2 hr SLA</b></div>
+      </div>
+      <div class="section">
+        <h3>Reflex</h3>
+        <button class="ghost" id="sync">Sync needs-input sessions</button>
+        <div class="detail" id="syncmsg">Configure local .env to enable live sync.</div>
+      </div>
+      <div class="section add">
+        <h3>Simulate an agent question</h3>
+        <textarea id="newq" placeholder="Question the agent asks…"></textarea>
+        <select id="newrisk">
+          <option value="high">High risk</option><option value="medium">Medium risk</option><option value="low">Low risk</option>
+        </select>
+        <button id="add">Add waiting session</button>
+      </div>
+    </aside>
+  </section>
+
+  <div class="sectionhead"><h2>Analytics</h2><span>Recomputed from the same local data every refresh</span></div>
+  <section class="chartgrid">
+    <div class="panel chartcard">
+      <h3>Risk distribution</h3>
+      <p class="chartsub">Waiting sessions grouped by declared risk tier</p>
+      <div id="chart-risk"></div>
+    </div>
+    <div class="panel chartcard">
+      <h3>SLA health</h3>
+      <p class="chartsub">Share of the queue on track, near, or past its SLA</p>
+      <div id="chart-sla"></div>
+    </div>
+    <div class="panel chartcard">
+      <h3>Wait time by owner</h3>
+      <p class="chartsub">Total time currently waiting, summed per owning team</p>
+      <div id="chart-owner"></div>
+    </div>
+    <div class="panel chartcard">
+      <h3>Response activity — last 24h</h3>
+      <p class="chartsub">Answers delivered per hour</p>
+      <div id="chart-activity"></div>
+    </div>
+  </section>
+
+  <p class="notice">Refreshes every 2 seconds. Demo records are local SQLite data; live Reflex sessions are only included after an explicit sync.</p>
+</main>
+<div id="drawer" class="drawer"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const RISK_COLOR = {high:'var(--red)', medium:'var(--amber)', low:'var(--green)'};
+const SLA_COLOR = {on_track:'var(--green)', near:'var(--amber)', breached:'var(--red)'};
+const SLA_LABEL = {on_track:'On track', near:'Near SLA', breached:'Breached'};
+let data = [];
+let stats = null;
+
+function duration(s) {
+  const m = Math.floor(s / 60), r = s % 60;
+  return m ? `${m}m ${r}s` : `${r}s`;
+}
+function durationShort(s) {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
+  return duration(s);
+}
+
+function render() {
+  let v = [...data];
+  const risk = $('#risk').value, q = $('#search').value.toLowerCase();
+  if (risk) v = v.filter((x) => x.risk_level === risk);
+  if (q) v = v.filter((x) => JSON.stringify(x).toLowerCase().includes(q));
+
+  const breach = data.filter((x) => x.sla_state === 'breached').length;
+  const oldest = Math.max(0, ...data.map((x) => x.wait_duration_seconds));
+  $('#metrics').innerHTML = `
+    <div class="metric" style="--accent:var(--blue)"><span class="label">Awaiting response</span><b>${data.length}</b></div>
+    <div class="metric" style="--accent:var(--red)"><span class="label">SLA breached</span><b class="red">${breach}</b></div>
+    <div class="metric" style="--accent:var(--amber)"><span class="label">Longest wait</span><b class="amber">${duration(oldest)}</b></div>
+    <div class="metric" style="--accent:var(--green)"><span class="label">Queue risk points</span><b class="green">${data.reduce((n, x) => n + x.priority_score, 0)}</b></div>`;
+
+  if (stats) {
+    const avg = stats.avg_resolution_seconds;
+    $('#metrics2').innerHTML = `
+      <div class="metric" style="--accent:var(--blue)"><span class="label">Answered today</span><b>${stats.answered_today}</b><span class="sub">across demo + synced sessions</span></div>
+      <div class="metric" style="--accent:var(--blue)"><span class="label">Avg. resolution time</span><b>${avg == null ? '—' : durationShort(Math.round(avg))}</b><span class="sub">question asked → answer sent</span></div>`;
+  }
+
+  $('#queue').innerHTML = v.length ? `<table><thead><tr><th>Risk</th><th>Agent question</th><th>Owner</th><th>Wait / SLA</th><th></th></tr></thead><tbody>${v.map((x) => `<tr>
+        <td><span class="pill ${x.risk_level}">${x.risk_level.toUpperCase()}</span><div class="detail">Score ${x.priority_score}</div></td>
+        <td><div class="question">${esc(x.last_question || 'Input required')}</div><div class="detail">${esc(x.agent_name)} · ${esc(x.id)}</div></td>
+        <td>${esc(x.owner)}</td>
+        <td><span class="sla ${x.sla_state}">${duration(x.wait_duration_seconds)} / ${x.sla_minutes}m</span><div class="detail ${x.sla_state}">${x.sla_state.replace('_',' ').toUpperCase()}</div></td>
+        <td><button onclick="openSession('${x.id}')">Answer</button></td>
+      </tr>`).join('')}</tbody></table>` : '<div class="empty">No waiting sessions match.</div>';
+}
+
+function barRows(container, rows, opts) {
+  if (!rows.length) { container.innerHTML = '<div class="chartempty">No data yet.</div>'; return; }
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  container.innerHTML = '';
+  for (const r of rows) {
+    const pct = Math.max(2, Math.round((r.value / max) * 100));
+    const row = document.createElement('div');
+    row.className = 'barrow';
+    row.tabIndex = 0;
+    row.title = `${r.label}: ${opts.formatTitle ? opts.formatTitle(r) : r.value}`;
+    const label = document.createElement('span');
+    label.className = 'barrow-label';
+    label.textContent = r.label;
+    const track = document.createElement('div');
+    track.className = 'bartrack';
+    const fill = document.createElement('div');
+    fill.className = 'barfill';
+    fill.style.width = pct + '%';
+    fill.style.background = r.color;
+    track.appendChild(fill);
+    const value = document.createElement('span');
+    value.className = 'barrow-value';
+    value.textContent = opts.formatValue ? opts.formatValue(r) : r.value;
+    row.append(label, track, value);
+    container.appendChild(row);
+  }
+}
+
+function renderRiskChart(counts) {
+  const rows = ['high', 'medium', 'low']
+    .map((k) => ({ label: k[0].toUpperCase() + k.slice(1), value: counts[k], color: RISK_COLOR[k] }));
+  barRows($('#chart-risk'), rows, { formatTitle: (r) => `${r.value} waiting` });
+}
+
+function renderSlaChart(counts) {
+  const total = counts.on_track + counts.near + counts.breached;
+  const el = $('#chart-sla');
+  if (!total) { el.innerHTML = '<div class="chartempty">No data yet.</div>'; return; }
+  const order = ['on_track', 'near', 'breached'];
+  const bar = document.createElement('div');
+  bar.className = 'stackbar';
+  const legend = document.createElement('div');
+  legend.className = 'stacklegend';
+  for (const key of order) {
+    const count = counts[key];
+    if (!count) continue;
+    const seg = document.createElement('div');
+    seg.className = 'stackseg';
+    seg.style.width = ((count / total) * 100) + '%';
+    seg.style.background = SLA_COLOR[key];
+    seg.title = `${SLA_LABEL[key]}: ${count}`;
+    bar.appendChild(seg);
+    const item = document.createElement('span');
+    const dot = document.createElement('i');
+    dot.style.background = SLA_COLOR[key];
+    item.appendChild(dot);
+    item.append(`${SLA_LABEL[key]}`);
+    const b = document.createElement('b');
+    b.textContent = count;
+    item.appendChild(b);
+    legend.appendChild(item);
+  }
+  el.innerHTML = '';
+  el.append(bar, legend);
+}
+
+function renderOwnerChart(ownerRows) {
+  const rows = ownerRows.map((o) => ({ label: o.owner, value: o.total_wait_seconds, color: 'var(--blue)', count: o.count }));
+  barRows($('#chart-owner'), rows, {
+    formatValue: (r) => durationShort(r.value),
+    formatTitle: (r) => `${durationShort(r.value)} across ${r.count} session${r.count === 1 ? '' : 's'}`,
+  });
+}
+
+function renderActivityChart(points) {
+  const el = $('#chart-activity');
+  const max = Math.max(1, ...points.map((p) => p.answered));
+  const w = 560, h = 150, padL = 4, padR = 4, padT = 10, padB = 20;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const xAt = (i) => padL + (i / (points.length - 1)) * plotW;
+  const yAt = (v) => padT + plotH - (v / max) * plotH;
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(p.answered).toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${xAt(points.length - 1).toFixed(1)},${(padT + plotH).toFixed(1)} L${xAt(0).toFixed(1)},${(padT + plotH).toFixed(1)} Z`;
+
+  const gridLines = [0, 0.5, 1].map((f) => {
+    const y = padT + plotH * (1 - f);
+    return `<line class="linegrid" x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}"/>`;
+  }).join('');
+
+  const hasActivity = points.some((p) => p.answered > 0);
+  const firstLabel = new Date(points[0].hour + ':00').toLocaleTimeString([], { hour: 'numeric' });
+  const lastLabel = new Date(points[points.length - 1].hour + ':00').toLocaleTimeString([], { hour: 'numeric' });
+
+  el.innerHTML = `
+    <div class="linewrap">
+      <svg class="linesvg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" id="activity-svg">
+        ${gridLines}
+        <path class="linearea" d="${areaPath}"></path>
+        <path class="lineline" d="${linePath}"></path>
+        <line class="linecrosshair" id="activity-crosshair" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}"></line>
+        <circle class="linedot" id="activity-dot" r="4"></circle>
+        <g class="lineaxis"><text x="${padL}" y="${h - 4}">${firstLabel}</text><text x="${w - padR}" y="${h - 4}" text-anchor="end">${lastLabel}</text></g>
+      </svg>
+      <div class="linetooltip" id="activity-tooltip"></div>
+      ${hasActivity ? '' : '<div class="chartempty" style="margin-top:-30px">No answers delivered in the last 24h yet.</div>'}
+    </div>`;
+
+  const svg = $('#activity-svg'), crosshair = $('#activity-crosshair'), dot = $('#activity-dot'), tooltip = $('#activity-tooltip');
+  svg.addEventListener('pointermove', (evt) => {
+    const rect = svg.getBoundingClientRect();
+    const xFrac = Math.min(1, Math.max(0, (evt.clientX - rect.left) / rect.width));
+    const idx = Math.round(xFrac * (points.length - 1));
+    const px = xAt(idx), py = yAt(points[idx].answered);
+    crosshair.setAttribute('x1', px); crosshair.setAttribute('x2', px); crosshair.style.opacity = 1;
+    dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.style.opacity = 1;
+    const label = new Date(points[idx].hour + ':00').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    tooltip.innerHTML = `<b>${points[idx].answered}</b> <span>answered · ${esc(label)}</span>`;
+    tooltip.style.left = ((px / w) * 100) + '%';
+    tooltip.style.top = ((py / h) * 100) + '%';
+    tooltip.style.opacity = 1;
+  });
+  svg.addEventListener('pointerleave', () => { crosshair.style.opacity = 0; dot.style.opacity = 0; tooltip.style.opacity = 0; });
+}
+
+function renderAnalytics() {
+  if (!stats) return;
+  renderRiskChart(stats.risk_counts);
+  renderSlaChart(stats.sla_counts);
+  renderOwnerChart(stats.wait_by_owner);
+  renderActivityChart(stats.activity_by_hour);
+}
+
+async function load() {
+  const [queueRes, statsRes] = await Promise.all([fetch('/api/queue'), fetch('/api/analytics')]);
+  data = await queueRes.json();
+  stats = await statsRes.json();
+  render();
+  renderAnalytics();
+}
+
+window.openSession = (id) => {
+  const x = data.find((i) => i.id === id);
+  $('#drawer').classList.add('open');
+  $('#drawer').innerHTML = `<button class="ghost" onclick="closeDrawer()">← Queue</button>
+    <h2>${esc(x.last_question)}</h2>
+    <p>${esc(x.agent_name)} · ${esc(x.id)} · ${esc(x.owner)}</p>
+    <div class="explain"><b>Task</b><br>${esc(x.task_description)}<br><br><b>Agent context</b><br>${esc(x.log_tail)}</div>
+    <label>Answer to agent</label>
+    <textarea id="answer" placeholder="Give a clear decision or constraint…"></textarea>
+    <label><input type="checkbox" id="slack"> Also notify Slack when configured</label>
+    <div class="actions"><button onclick="sendAnswer('${x.id}')">Send answer</button><button class="ghost" onclick="closeDrawer()">Cancel</button></div>`;
+};
+window.closeDrawer = () => $('#drawer').classList.remove('open');
+window.sendAnswer = async (id) => {
+  const answer = $('#answer').value.trim();
+  if (!answer) return alert('Enter an answer.');
+  const r = await fetch(`/api/sessions/${id}/answer`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer, notify_slack: $('#slack').checked }),
+  });
+  if (!r.ok) return alert((await r.json()).detail || 'Unable to deliver answer');
+  closeDrawer();
+  await load();
+};
+
+$('#risk').onchange = render;
+$('#search').oninput = render;
+$('#add').onclick = async () => {
+  const question = $('#newq').value.trim();
+  if (!question) return alert('Enter a question.');
+  const r = await fetch('/api/demo/sessions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, risk_level: $('#newrisk').value, task_description: 'Related workspace task awaiting an approval decision.' }),
+  });
+  if (!r.ok) return alert('Could not add session');
+  $('#newq').value = '';
+  load();
+};
+$('#sync').onclick = async () => {
+  const r = await fetch('/api/integrations/reflex/sync', { method: 'POST' });
+  const j = await r.json();
+  $('#syncmsg').textContent = r.ok ? `Synced ${j.synced} waiting Reflex agents.` : (j.detail || 'Sync failed');
+  if (r.ok) load();
+};
+
+(async () => {
+  const h = await fetch('/api/health').then((r) => r.json());
+  const conn = $('#connection');
+  if (h.reflex_configured) { conn.textContent = 'Reflex configured'; conn.classList.remove('demo'); conn.prepend(document.createElement('i')); }
+  else { conn.innerHTML = '<i></i>Dashboard demo'; }
+  load();
+  setInterval(load, 2000);
+})().catch(console.error);
+</script>
+</body>
+</html>

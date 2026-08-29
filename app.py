@@ -122,6 +122,52 @@ def queue() -> list[dict]:
     return sorted((present(row) for row in rows), key=lambda item: item["priority_score"], reverse=True)
 
 
+def analytics() -> dict:
+    with db() as connection:
+        waiting = [present(row) for row in connection.execute("SELECT * FROM sessions WHERE status='waiting'").fetchall()]
+        events = connection.execute("SELECT * FROM events ORDER BY timestamp").fetchall()
+
+    risk_counts = {"high": 0, "medium": 0, "low": 0}
+    sla_counts = {"on_track": 0, "near": 0, "breached": 0}
+    owner_totals: dict[str, dict] = {}
+    for item in waiting:
+        risk_counts[item["risk_level"]] += 1
+        sla_counts[item["sla_state"]] += 1
+        bucket = owner_totals.setdefault(item["owner"], {"owner": item["owner"], "total_wait_seconds": 0, "count": 0})
+        bucket["total_wait_seconds"] += item["wait_duration_seconds"]
+        bucket["count"] += 1
+    wait_by_owner = sorted(owner_totals.values(), key=lambda x: x["total_wait_seconds"], reverse=True)[:8]
+
+    current = now()
+    hourly: dict[str, int] = {(current - timedelta(hours=i)).strftime("%Y-%m-%dT%H:00"): 0 for i in range(23, -1, -1)}
+    asked_at: dict[str, datetime] = {}
+    resolution_seconds: list[float] = []
+    answered_today = 0
+    today_key = current.strftime("%Y-%m-%d")
+    for event in events:
+        timestamp = datetime.fromisoformat(event["timestamp"])
+        if event["event_type"] == "question_asked":
+            asked_at[event["session_id"]] = timestamp
+        elif event["event_type"] == "question_answered":
+            bucket_key = timestamp.strftime("%Y-%m-%dT%H:00")
+            if bucket_key in hourly:
+                hourly[bucket_key] += 1
+            if timestamp.strftime("%Y-%m-%d") == today_key:
+                answered_today += 1
+            asked = asked_at.get(event["session_id"])
+            if asked:
+                resolution_seconds.append((timestamp - asked).total_seconds())
+
+    return {
+        "risk_counts": risk_counts,
+        "sla_counts": sla_counts,
+        "wait_by_owner": wait_by_owner,
+        "activity_by_hour": [{"hour": hour, "answered": count} for hour, count in hourly.items()],
+        "answered_today": answered_today,
+        "avg_resolution_seconds": (sum(resolution_seconds) / len(resolution_seconds)) if resolution_seconds else None,
+    }
+
+
 class AnswerRequest(BaseModel):
     answer: str = Field(min_length=1, max_length=8000)
     notify_slack: bool = False
@@ -227,6 +273,11 @@ def health():
 @app.get("/api/queue")
 def get_queue():
     return queue()
+
+
+@app.get("/api/analytics")
+def get_analytics():
+    return analytics()
 
 
 @app.get("/api/sessions")
