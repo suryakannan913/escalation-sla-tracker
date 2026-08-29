@@ -292,7 +292,10 @@ async def reflex_poll_loop() -> None:
 async def auto_generate_loop() -> None:
     """Keeps the demo queue alive on its own by dropping in a new waiting
     session every 20-45s, picked from AUTO_QUESTION_POOL, up to a cap so the
-    queue doesn't grow without bound if nobody is answering."""
+    queue doesn't grow without bound if nobody is answering. Never picks a
+    question that's already sitting in the queue, so two waiting sessions
+    never show the same question at once; the question becomes eligible
+    again once its session is answered."""
     while True:
         await asyncio.sleep(random.uniform(20, 45))
         if not auto_generate_state["enabled"]:
@@ -303,7 +306,13 @@ async def auto_generate_loop() -> None:
             ).fetchone()[0]
             if waiting_demo_count >= MAX_AUTO_DEMO_WAITING:
                 continue
-            agent, task, risk, question, owner, log = random.choice(AUTO_QUESTION_POOL)
+            active_questions = {
+                row[0] for row in connection.execute("SELECT last_question FROM sessions WHERE status='waiting'").fetchall()
+            }
+            candidates = [t for t in AUTO_QUESTION_POOL if t[3] not in active_questions]
+            if not candidates:
+                continue
+            agent, task, risk, question, owner, log = random.choice(candidates)
             session_id = f"auto-{uuid.uuid4().hex[:8]}"
             connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 session_id, "demo", f"demo-devbox-{session_id}", agent, task, "waiting", risk,
