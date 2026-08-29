@@ -67,6 +67,23 @@ def initialize() -> None:
         count = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         if count == 0:
             seed_demo(connection)
+        migrate_demo_copy(connection)
+
+
+def migrate_demo_copy(connection: sqlite3.Connection) -> None:
+    """Keep the persistent demo workspace aligned with the current walkthrough."""
+    connection.execute(
+        "UPDATE sessions SET last_question=? WHERE id='demo-001' AND last_question=?",
+        (
+            "Payment retries are failing for EU customers. Should I pause automatic retries while we investigate?",
+            "Should I disable card retries for EU traffic?",
+        ),
+    )
+    # The default story has two blocked agents and three actively working agents.
+    # Do not overwrite sessions a user has already answered.
+    connection.execute(
+        "UPDATE sessions SET status='running', waiting_since=NULL WHERE id IN ('demo-003','demo-004','demo-005') AND status='waiting'"
+    )
 
 
 def seed_demo(connection: sqlite3.Connection) -> None:
@@ -410,7 +427,7 @@ async def answer_session(session_id: str, body: AnswerRequest):
             raise HTTPException(409, "Session is not currently waiting")
         if row["source"] == "reflex":
             await reflex.answer(row["reflex_agent_id"], body.answer)
-        connection.execute("UPDATE sessions SET status='answered', waiting_since=NULL, updated_at=? WHERE id=?", (iso(), session_id))
+        connection.execute("UPDATE sessions SET status='running', waiting_since=NULL, updated_at=? WHERE id=?", (iso(), session_id))
         write_event(connection, session_id, "question_answered", {"answer": body.answer, "slack_requested": body.notify_slack})
     if body.notify_slack and slack.configured:
         await slack.notify_answer(row, body.answer)

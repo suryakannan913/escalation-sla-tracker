@@ -25,6 +25,17 @@ main{padding:22px 24px 40px}
 .live i{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
 .live.demo{color:var(--muted);background:rgba(255,255,255,.03);border-color:var(--line)}
 .live.demo i{background:var(--muted2);box-shadow:none}
+.agent-summary{margin-bottom:18px;background:linear-gradient(135deg,#10223a,#0d1a2d);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.agent-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+.agent-summary-head h2{font-size:15px;margin:0}.agent-summary-head span{font-size:12px;color:var(--muted)}
+.agent-statuses{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.agent-card{background:var(--panel2);border:1px solid var(--line-soft);border-radius:9px;padding:11px 12px;min-width:0}
+.agent-card .agent-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-card .agent-work{font-size:12.5px;color:var(--blue);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-card .agent-next{font-size:10.5px;color:var(--muted2);margin-top:3px}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px;box-shadow:0 0 0 3px rgba(74,222,128,.12)}
+.toast{position:fixed;top:18px;left:50%;transform:translate(-50%,-20px);z-index:20;background:#10233b;border:1px solid var(--blue-dim);border-radius:8px;padding:10px 14px;font-size:13px;opacity:0;pointer-events:none;transition:.2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{border-color:var(--red)}
 
 .sectionhead{display:flex;align-items:baseline;justify-content:space-between;margin:28px 0 12px}
 .sectionhead h2{font-size:14px;margin:0;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:700}
@@ -123,11 +134,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .layout{grid-template-columns:1fr}aside{display:none}
   .metrics{grid-template-columns:repeat(2,1fr)}
   .chartgrid{grid-template-columns:1fr}
+  .agent-statuses{grid-template-columns:1fr 1fr}
 }
 @media(max-width:550px){
   .metrics{grid-template-columns:1fr}.metrics.secondary{grid-template-columns:1fr}
   input{width:100%}.toolbar{flex-wrap:wrap}
   table th:nth-child(3),table td:nth-child(3){display:none}
+  .agent-statuses{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -143,6 +156,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <div class="live demo" id="connection"><i></i>Dashboard demo</div>
 </header>
 <main>
+  <section class="agent-summary">
+    <div class="agent-summary-head"><h2 id="agent-counts">Loading agents…</h2><span>Live workspace activity</span></div>
+    <div class="agent-statuses" id="agent-statuses"></div>
+  </section>
   <section class="metrics" id="metrics"></section>
   <section class="metrics secondary" id="metrics2"></section>
 
@@ -218,6 +235,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <p class="notice">Refreshes every 2 seconds. Demo records are local SQLite data; live Reflex sessions are only included after an explicit sync.</p>
 </main>
 <div id="drawer" class="drawer"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -225,7 +243,33 @@ const RISK_COLOR = {high:'var(--red)', medium:'var(--amber)', low:'var(--green)'
 const SLA_COLOR = {on_track:'var(--green)', near:'var(--amber)', breached:'var(--red)'};
 const SLA_LABEL = {on_track:'On track', near:'Near SLA', breached:'Breached'};
 let data = [];
+let sessions = [];
 let stats = null;
+let toastTimer = null;
+const ACTIVITY_PHASES = [
+  'Fetching reviews', 'Checking recent changes', 'Running validation',
+  'Summarizing findings', 'Preparing the next step',
+];
+
+function notify(message, isError = false) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.className = `toast show${isError ? ' error' : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 2600);
+}
+
+function renderAgentActivity() {
+  const running = sessions.filter((x) => x.status === 'running');
+  const waiting = sessions.filter((x) => x.status === 'waiting');
+  $('#agent-counts').textContent = `${running.length} agent${running.length === 1 ? '' : 's'} running, ${waiting.length} waiting`;
+  const slot = Math.floor(Date.now() / 10000);
+  const seconds = 10 - (Math.floor(Date.now() / 1000) % 10);
+  $('#agent-statuses').innerHTML = running.length ? running.map((x, index) => {
+    const phase = ACTIVITY_PHASES[(slot + index) % ACTIVITY_PHASES.length];
+    return `<div class="agent-card"><div class="agent-name"><i class="status-dot"></i>${esc(x.agent_name)}</div><div class="agent-work">${esc(phase)}…</div><div class="agent-next">Next step in ${seconds}s</div></div>`;
+  }).join('') : '<div class="detail">No agents are currently running. Answer a waiting question to resume one.</div>';
+}
 
 function duration(s) {
   const m = Math.floor(s / 60), r = s % 60;
@@ -401,10 +445,12 @@ function renderAnalytics() {
 }
 
 async function load() {
-  const [queueRes, statsRes] = await Promise.all([fetch('/api/queue'), fetch('/api/analytics')]);
+  const [queueRes, statsRes, sessionsRes] = await Promise.all([fetch('/api/queue'), fetch('/api/analytics'), fetch('/api/sessions')]);
   data = await queueRes.json();
   stats = await statsRes.json();
+  sessions = await sessionsRes.json();
   render();
+  renderAgentActivity();
   renderAnalytics();
 }
 
@@ -423,28 +469,30 @@ window.openSession = (id) => {
 window.closeDrawer = () => $('#drawer').classList.remove('open');
 window.sendAnswer = async (id) => {
   const answer = $('#answer').value.trim();
-  if (!answer) return alert('Enter an answer.');
+  if (!answer) return notify('Enter an answer before sending.', true);
   const r = await fetch(`/api/sessions/${id}/answer`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ answer, notify_slack: $('#slack').checked }),
   });
-  if (!r.ok) return alert((await r.json()).detail || 'Unable to deliver answer');
+  if (!r.ok) return notify((await r.json()).detail || 'Unable to deliver answer', true);
   closeDrawer();
   await load();
+  notify('Answer sent. The agent is running again.');
 };
 
 $('#risk').onchange = render;
 $('#search').oninput = render;
 $('#add').onclick = async () => {
   const question = $('#newq').value.trim();
-  if (!question) return alert('Enter a question.');
+  if (!question) return notify('Enter a question first.', true);
   const r = await fetch('/api/demo/sessions', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question, risk_level: $('#newrisk').value, task_description: 'Related workspace task awaiting an approval decision.' }),
   });
-  if (!r.ok) return alert('Could not add session');
+  if (!r.ok) return notify('Could not add session', true);
   $('#newq').value = '';
-  load();
+  await load();
+  notify('Waiting session added to the queue.');
 };
 $('#sync').onclick = async () => {
   const r = await fetch('/api/integrations/reflex/sync', { method: 'POST' });
@@ -476,6 +524,7 @@ $('#autogen').onchange = async (e) => {
   setAutogenMessage(h.auto_generate);
   load();
   setInterval(load, 2000);
+  setInterval(renderAgentActivity, 1000);
 })().catch(console.error);
 </script>
 </body>
