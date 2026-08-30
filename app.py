@@ -2,7 +2,8 @@
 
 Starts with a persistent, realistic demo queue. When REFLEX_API_KEY is set in
 the local .env file, POST /api/integrations/reflex/sync reads live needs_input
-agents from Reflex. Human answers are dispatched to Reflex control-response.
+agents from Reflex. Human answers are dispatched via Reflex's agent message
+endpoint, which resumes the agent's turn.
 """
 from __future__ import annotations
 
@@ -65,7 +66,10 @@ def initialize() -> None:
           payload TEXT NOT NULL, timestamp TEXT NOT NULL
         )""")
         count = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-        if count == 0:
+        if count == 0 and not reflex.configured:
+            # Only seed the canned walkthrough when there's no real Reflex
+            # account to sync from — a configured deployment should show real
+            # agents, not mock ones.
             seed_demo(connection)
         migrate_demo_copy(connection)
 
@@ -126,7 +130,7 @@ AUTO_QUESTION_POOL: list[tuple[str, str, Risk, str, str, str]] = [
 ]
 MAX_AUTO_DEMO_WAITING = 12
 
-auto_generate_state = {"enabled": True}
+auto_generate_state = {"enabled": False}
 
 
 def classify_risk(task: str) -> Risk:
@@ -237,16 +241,31 @@ class ReflexClient:
         return os.getenv("REFLEX_BASE_URL", "https://reflex.runloop.ai").rstrip("/")
 
     async def waiting_agents(self) -> list[dict]:
+        """Agents that actually need a human. The `status=needs_input` filter alone
+        misses a real, observed case: a devbox can go idle/suspended after its turn
+        ends while the record's own `status` field stays stuck on `running` (a
+        known staleness documented by the Reflex SDK). `turnState` is a separate,
+        directly-maintained field that doesn't share that lag, so a `running`
+        record with `turnState=idle` is treated as needing input too."""
         if not self.configured:
             raise HTTPException(400, "Reflex is not configured. Set REFLEX_API_KEY and REFLEX_ORGANIZATION_ID in .env.")
         async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(f"{self.base_url()}/api/agents", headers=self.headers(), params={"status": "needs_input", "limit": 200})
+            response = await client.get(f"{self.base_url()}/api/agents", headers=self.headers(), params={"archived": "false", "limit": 200})
             response.raise_for_status()
-            return response.json().get("agents", [])
+            agents = response.json().get("agents", [])
+        return [
+            a for a in agents
+            if a.get("status") == "needs_input" or (a.get("status") == "running" and a.get("turnState") == "idle")
+        ]
 
     async def answer(self, agent_id: str, answer: str) -> None:
+        """`control-response` answers a formal control-request handshake (e.g.
+        approving one pending tool call) — it's a no-op for an agent that's
+        simply idle after finishing a turn, which is the normal needs_input
+        case here. `message` is the general "continue the chat" endpoint and
+        is what actually wakes a suspended devbox and resumes the turn."""
         async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.post(f"{self.base_url()}/api/agents/{agent_id}/control-response", headers=self.headers(), json={"payload": answer})
+            response = await client.post(f"{self.base_url()}/api/agents/{agent_id}/message", headers=self.headers(), json={"message": answer})
             if response.status_code == 409:
                 raise HTTPException(409, "This agent no longer has a pending input request.")
             response.raise_for_status()
@@ -395,11 +414,28 @@ async def import_reflex_waiting() -> int:
     with db() as connection:
         for agent in agents:
             agent_id = agent["id"]
-            existing = connection.execute("SELECT id FROM sessions WHERE reflex_agent_id=?", (agent_id,)).fetchone()
-            task = agent.get("task") or agent.get("initialPrompt") or agent.get("title") or "Reflex agent requires input"
+            existing = connection.execute("SELECT id, status, waiting_since FROM sessions WHERE reflex_agent_id=?", (agent_id,)).fetchone()
+            # The real Agent record's field is `prompt` — task/initialPrompt/title
+            # don't exist on it, so reading those silently fell through to the
+            # generic fallback and misclassified every synced agent as low risk.
+            task = agent.get("prompt") or "Reflex agent requires input"
             values = (agent.get("devboxId"), agent.get("name") or agent.get("agentType") or "Reflex agent", task, classify_risk(task), iso())
             if existing:
-                connection.execute("UPDATE sessions SET status='waiting', devbox_id=?, agent_name=?, task_description=?, risk_level=?, updated_at=? WHERE id=?", (*values, existing["id"]))
+                # A real agent normally answered -> resumed -> needs input again
+                # is the expected cycle, not an edge case. Re-entering `waiting`
+                # must restamp `waiting_since` (answering clears it to NULL) or
+                # the wait timer and priority score stay frozen at zero forever.
+                if existing["status"] != "waiting" or not existing["waiting_since"]:
+                    connection.execute(
+                        "UPDATE sessions SET status='waiting', waiting_since=?, devbox_id=?, agent_name=?, task_description=?, risk_level=?, updated_at=? WHERE id=?",
+                        (iso(), *values, existing["id"]),
+                    )
+                    write_event(connection, existing["id"], "question_asked", {"source": "reflex", "agent_id": agent_id})
+                else:
+                    connection.execute(
+                        "UPDATE sessions SET status='waiting', devbox_id=?, agent_name=?, task_description=?, risk_level=?, updated_at=? WHERE id=?",
+                        (*values, existing["id"]),
+                    )
             else:
                 session_id = f"reflex-{agent_id}"
                 connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
