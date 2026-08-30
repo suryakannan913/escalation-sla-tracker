@@ -133,6 +133,35 @@ MAX_AUTO_DEMO_WAITING = 12
 auto_generate_state = {"enabled": False}
 
 
+def extract_message_text(payload: object) -> str | None:
+    """Best-effort text pull from one stream event's payload, for dialects
+    that don't chunk their message (native Claude Code `assistant` events,
+    flat `message` events, etc). Payload shapes vary by protocol, so this
+    tries the common fields rather than assuming one schema."""
+    if payload is None:
+        return None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            return payload.strip() or None
+    if not isinstance(payload, dict):
+        return None
+    for field in ("question", "message", "text", "summary"):
+        value = payload.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    content = payload.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if isinstance(content, list):
+        parts = [b.get("text") for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)]
+        parts = [p.strip() for p in parts if p and p.strip()]
+        if parts:
+            return "\n".join(parts)
+    return None
+
+
 def classify_risk(task: str) -> Risk:
     text = task.lower()
     if any(word in text for word in ("auth", "payment", "delete", "migration", "prod", "credential", "security")):
@@ -257,6 +286,44 @@ class ReflexClient:
             a for a in agents
             if a.get("status") == "needs_input" or (a.get("status") == "running" and a.get("turnState") == "idle")
         ]
+
+    async def last_message(self, agent_id: str) -> str | None:
+        """Reconstruct the agent's most recent complete chat message from its
+        event stream, so the dashboard can show the real question instead of
+        a generic placeholder. Dialects stream text differently: ACP/opencode
+        (this org's default agentType) sends the message as many small
+        `session/update` chunks sharing one `messageId` — join the last run
+        of those. Other dialects (native Claude Code, flat `message` events)
+        carry the whole text in one event's payload; extract_message_text
+        handles those as a fallback, walking backward from the newest event."""
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(f"{self.base_url()}/api/agents/{agent_id}/stream", headers=self.headers())
+            response.raise_for_status()
+            events = response.json()
+        if not isinstance(events, list):
+            events = events.get("events", []) if isinstance(events, dict) else []
+
+        chunks = [
+            e for e in events
+            if e.get("type") == "session/update"
+            and isinstance(e.get("payload"), dict)
+            and (e["payload"].get("update") or {}).get("sessionUpdate") == "agent_message_chunk"
+        ]
+        if chunks:
+            last_message_id = chunks[-1]["payload"]["update"].get("messageId")
+            text = "".join(
+                (c["payload"]["update"].get("content") or {}).get("text", "")
+                for c in chunks
+                if c["payload"]["update"].get("messageId") == last_message_id
+            ).strip()
+            if text:
+                return text
+
+        for event in reversed(events):
+            text = extract_message_text(event.get("payload"))
+            if text:
+                return text
+        return None
 
     async def answer(self, agent_id: str, answer: str) -> None:
         """`control-response` answers a formal control-request handshake (e.g.
@@ -410,25 +477,49 @@ def set_auto_generate(body: AutoGenerateRequest):
 
 async def import_reflex_waiting() -> int:
     agents = await reflex.waiting_agents()
+    if not agents:
+        return 0
+
+    with db() as connection:
+        existing_by_agent = {
+            row["reflex_agent_id"]: row
+            for row in connection.execute(
+                "SELECT id, reflex_agent_id, status, waiting_since FROM sessions WHERE source='reflex'"
+            ).fetchall()
+        }
+
+    def entering_waiting(agent_id: str) -> bool:
+        existing = existing_by_agent.get(agent_id)
+        return not existing or existing["status"] != "waiting" or not existing["waiting_since"]
+
+    # Only pull the real question for agents newly entering `waiting` — an
+    # agent that's already sitting there hasn't said anything new, and the
+    # stream fetch is one extra request per agent, run concurrently here so
+    # a handful of agents doesn't serialize into several seconds of polling.
+    to_fetch = [a["id"] for a in agents if entering_waiting(a["id"])]
+    fetched = await asyncio.gather(*(reflex.last_message(aid) for aid in to_fetch), return_exceptions=True)
+    questions = {aid: text for aid, text in zip(to_fetch, fetched) if isinstance(text, str) and text}
+
     synced = 0
     with db() as connection:
         for agent in agents:
             agent_id = agent["id"]
-            existing = connection.execute("SELECT id, status, waiting_since FROM sessions WHERE reflex_agent_id=?", (agent_id,)).fetchone()
+            existing = existing_by_agent.get(agent_id)
             # The real Agent record's field is `prompt` — task/initialPrompt/title
             # don't exist on it, so reading those silently fell through to the
             # generic fallback and misclassified every synced agent as low risk.
             task = agent.get("prompt") or "Reflex agent requires input"
             values = (agent.get("devboxId"), agent.get("name") or agent.get("agentType") or "Reflex agent", task, classify_risk(task), iso())
+            question = questions.get(agent_id, "Agent is waiting for an input control response.")
             if existing:
                 # A real agent normally answered -> resumed -> needs input again
                 # is the expected cycle, not an edge case. Re-entering `waiting`
                 # must restamp `waiting_since` (answering clears it to NULL) or
                 # the wait timer and priority score stay frozen at zero forever.
-                if existing["status"] != "waiting" or not existing["waiting_since"]:
+                if entering_waiting(agent_id):
                     connection.execute(
-                        "UPDATE sessions SET status='waiting', waiting_since=?, devbox_id=?, agent_name=?, task_description=?, risk_level=?, updated_at=? WHERE id=?",
-                        (iso(), *values, existing["id"]),
+                        "UPDATE sessions SET status='waiting', waiting_since=?, last_question=?, devbox_id=?, agent_name=?, task_description=?, risk_level=?, updated_at=? WHERE id=?",
+                        (iso(), question, *values, existing["id"]),
                     )
                     write_event(connection, existing["id"], "question_asked", {"source": "reflex", "agent_id": agent_id})
                 else:
@@ -440,7 +531,7 @@ async def import_reflex_waiting() -> int:
                 session_id = f"reflex-{agent_id}"
                 connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                     session_id, "reflex", values[0], values[1], values[2], "waiting", values[3], iso(), iso(),
-                    "Agent is waiting for an input control response.", "Synced from the Reflex needs_input state.", "Unassigned", agent_id, values[4],
+                    question, "Synced from the Reflex needs_input state.", "Unassigned", agent_id, values[4],
                 ))
                 write_event(connection, session_id, "question_asked", {"source": "reflex", "agent_id": agent_id})
             synced += 1
