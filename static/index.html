@@ -6,114 +6,139 @@
 <title>Escalation SLA Tracker</title>
 <style>
 :root{
-  --bg:#070d18;--panel:#0f1c30;--panel2:#0b1626;--line:#22344f;--line-soft:#182842;
-  --muted:#8ea0bb;--muted2:#5f7191;--text:#f3f7fb;
-  --blue:#60a5fa;--blue-dim:#3b6cad;--red:#fb7185;--amber:#fbbf24;--green:#4ade80;
+  --bg:#0a0b0d;--panel:#101114;--panel2:#17181c;
+  --line:#26272c;--line-soft:#1d1e22;
+  --muted:#9aa0ab;--muted2:#5f6570;--text:#f3f4f6;
+  --accent:#a5b4fc;--accent-dim:#4338ca;
+  --blue:#60a5fa;--blue-dim:#3b6cad;--red:#f87171;--amber:#fbbf24;--green:#34d399;
+  --red-bg:rgba(248,113,113,.14);--red-fg:#fca5a5;
+  --amber-bg:rgba(251,191,36,.14);--amber-fg:#fcd34d;
+  --green-bg:rgba(52,211,153,.14);--green-fg:#6ee7b7;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+p{color:var(--muted);margin:0}
 header,main{max-width:1320px;margin:auto}
-header{padding:24px 24px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:linear-gradient(180deg,#0a1526,#070d18)}
-header .brand{display:flex;align-items:center;gap:12px}
-header .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--blue),#2b5fb8);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#04101f;flex-shrink:0}
-h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.2px}
-h1 span{color:var(--blue)}
-header p{margin:2px 0 0;font-size:12.5px}
-p{color:var(--muted)}
-main{padding:22px 24px 40px}
-.live{font-size:12px;color:var(--green);font-weight:700;display:flex;align-items:center;gap:6px;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);padding:6px 11px;border-radius:99px}
-.live i{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
-.live.demo{color:var(--muted);background:rgba(255,255,255,.03);border-color:var(--line)}
-.live.demo i{background:var(--muted2);box-shadow:none}
-.agent-summary{margin-bottom:18px;background:linear-gradient(135deg,#10223a,#0d1a2d);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-.agent-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
-.agent-summary-head h2{font-size:15px;margin:0}.agent-summary-head span{font-size:12px;color:var(--muted)}
-.agent-statuses{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.agent-card{background:var(--panel2);border:1px solid var(--line-soft);border-radius:9px;padding:11px 12px;min-width:0}
-.agent-card .agent-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.agent-card .agent-work{font-size:12.5px;color:var(--blue);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header{padding:20px 24px 0}
+.titlerow{display:flex;justify-content:space-between;align-items:flex-start}
+.titlerow h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.3px}
+.titlerow .sub{font-size:12.5px;margin-top:4px}
+main{padding:20px 24px 48px}
+
+.tabs{display:flex;gap:22px;margin-top:18px;border-bottom:1px solid var(--line)}
+.tabitem{padding:0 0 11px;font-size:13.5px;color:var(--muted);text-decoration:none;font-weight:600;border-bottom:2px solid transparent;cursor:pointer}
+.tabitem:hover{color:var(--text)}
+.tabitem.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+.live{font-size:12px;color:var(--green-fg);font-weight:600;display:flex;align-items:center;gap:6px;background:var(--green-bg);border:1px solid rgba(52,211,153,.3);padding:5px 10px;border-radius:6px}
+.live i{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block}
+.live.demo{color:var(--muted);background:var(--panel2);border-color:var(--line)}
+.live.demo i{background:var(--muted2)}
+
+.agent-summary{margin:18px 0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.agent-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:11px}
+.agent-summary-head h2{font-size:13.5px;margin:0;font-weight:600}.agent-summary-head span{font-size:12px;color:var(--muted)}
+.agent-statuses{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.agent-card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 11px;min-width:0}
+.agent-card .agent-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.agent-card .agent-work{font-size:12px;color:var(--blue);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .agent-card .agent-next{font-size:10.5px;color:var(--muted2);margin-top:3px}
-.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px;box-shadow:0 0 0 3px rgba(74,222,128,.12)}
-.toast{position:fixed;top:18px;left:50%;transform:translate(-50%,-20px);z-index:20;background:#10233b;border:1px solid var(--blue-dim);border-radius:8px;padding:10px 14px;font-size:13px;opacity:0;pointer-events:none;transition:.2s}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:7px}
+.toast{position:fixed;top:16px;left:50%;transform:translate(-50%,-20px);z-index:20;background:var(--panel2);border:1px solid var(--line);color:#fff;border-radius:8px;padding:9px 14px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{border-color:var(--red)}
 
-.sectionhead{display:flex;align-items:baseline;justify-content:space-between;margin:28px 0 12px}
-.sectionhead h2{font-size:14px;margin:0;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:700}
-.sectionhead span{font-size:12px;color:var(--muted2)}
+.sectionhead{display:flex;align-items:baseline;justify-content:space-between;margin:26px 0 11px}
+.sectionhead h2{font-size:13px;margin:0;color:var(--text);font-weight:700}
+.sectionhead span{font-size:12px;color:var(--muted)}
 
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .metrics.secondary{grid-template-columns:repeat(2,1fr);margin-top:12px}
-.metric,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
-.metric{padding:16px 18px;position:relative;overflow:hidden}
-.metric:before{content:'';position:absolute;inset:0 0 auto 0;height:2px;background:var(--accent,var(--blue-dim))}
-.label{font-size:10.5px;color:var(--muted);letter-spacing:.09em;text-transform:uppercase;font-weight:600}
-.metric b{display:block;font-size:28px;margin-top:6px;font-weight:700;letter-spacing:-.5px}
+.metric,.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.metric{padding:14px 16px}
+.label{font-size:10.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.metric b{display:block;font-size:24px;margin-top:6px;font-weight:700;letter-spacing:-.4px;color:var(--text)}
 .metric .sub{font-size:11.5px;color:var(--muted2);margin-top:3px;display:block}
 .red{color:var(--red)}.amber{color:var(--amber)}.green{color:var(--green)}.blue{color:var(--blue)}
 
-.layout{display:grid;grid-template-columns:1fr 320px;gap:18px;margin-top:20px}
-.toolbar{padding:14px 16px;display:flex;gap:9px;border-bottom:1px solid var(--line);align-items:center}
-.toolbar h2{font-size:14px;margin:0 auto 0 0;text-transform:none;letter-spacing:0;color:var(--text);font-weight:700}
-input,select,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px 10px;font:inherit;font-size:13px}
-input:focus,select:focus,textarea:focus{outline:2px solid var(--blue-dim);outline-offset:1px}
+.layout{display:grid;grid-template-columns:1fr 300px;gap:14px;margin-top:18px}
+.toolbar{padding:12px 14px;display:flex;gap:8px;border-bottom:1px solid var(--line);align-items:center}
+.toolbar h2{font-size:13.5px;margin:0 auto 0 0;font-weight:700;color:var(--text)}
+input,select,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:7px 9px;font:inherit;font-size:13px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue-dim);outline-offset:0;border-color:var(--blue)}
 input{width:180px}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;color:var(--muted);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;padding:11px 14px;background:var(--panel2)}
-td{padding:14px;border-top:1px solid var(--line);vertical-align:top}
-.question{font-weight:650;max-width:355px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.message-block{white-space:pre-wrap;max-height:280px;overflow-y:auto;color:var(--text);font-size:13px;line-height:1.5}
-.detail{font-size:12px;color:var(--muted2);margin-top:4px}
-.pill{display:inline-block;border-radius:99px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.02em}
-.high{background:#4a1726;color:#fecdd3}.medium{background:#4c3511;color:#fde68a}.low{background:#133b34;color:#bbf7d0}
-.sla{font-weight:700}.breached{color:var(--red)}.near{color:var(--amber)}.on_track{color:var(--green)}
-button{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:8px 12px;font-weight:700;cursor:pointer;font-size:13px}
-button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
-button:hover{filter:brightness(1.1)}
+th{text-align:left;color:var(--muted);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;padding:9px 14px;background:var(--panel2);border-bottom:1px solid var(--line)}
+td{padding:12px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tbody tr:hover{background:var(--panel2)}
+tbody tr:last-child td{border-bottom:none}
+.question{font-weight:600;max-width:400px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--text)}
+.message-block{white-space:pre-wrap;color:var(--text);font-size:13px;line-height:1.55}
+.detail{font-size:12px;color:var(--muted);margin-top:3px}
+.detail.breached{color:var(--red)}.detail.near{color:var(--amber)}.detail.on_track{color:var(--green)}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.pill{display:inline-block;border-radius:5px;padding:3px 8px;font-size:10.5px;font-weight:700;letter-spacing:.02em}
+.high{background:var(--red-bg);color:var(--red-fg)}.medium{background:var(--amber-bg);color:var(--amber-fg)}.low{background:var(--green-bg);color:var(--green-fg)}
+.sla{font-weight:600}.breached{color:var(--red)}.near{color:var(--amber)}.on_track{color:var(--green)}
+button{background:var(--accent-dim);color:#fff;border:0;border-radius:6px;padding:7px 12px;font-weight:600;cursor:pointer;font-size:13px}
+button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--text)}
+button:hover{filter:brightness(1.2)}
+button.ghost:hover{background:var(--line-soft);filter:none}
 button:disabled{opacity:.5;cursor:not-allowed}
-.section{padding:16px;border-bottom:1px solid var(--line)}
+.section{padding:14px 16px;border-bottom:1px solid var(--line)}
 .section:last-child{border-bottom:none}
-.section h3{font-size:13px;margin:0 0 10px;font-weight:700}
-.rule{display:flex;justify-content:space-between;border-top:1px solid var(--line-soft);padding:8px 0;color:var(--muted);font-size:13px}
+.section h3{font-size:12.5px;margin:0 0 9px;font-weight:700;color:var(--text)}
+.rule{display:flex;justify-content:space-between;border-top:1px solid var(--line-soft);padding:7px 0;color:var(--muted);font-size:12.5px}
 .rule:first-of-type{border-top:0}
-.rule b{color:var(--text)}
-.explain{background:var(--panel2);color:var(--muted);font-size:12.5px;line-height:1.55;padding:11px;border-radius:8px}
-.empty{padding:45px;text-align:center;color:var(--muted)}
-.drawer{position:fixed;inset:0 0 0 auto;width:min(500px,100%);padding:24px;background:#0c1728;border-left:1px solid var(--line);box-shadow:-8px 0 40px #0008;transform:translateX(101%);transition:.2s;overflow:auto}
+.rule b{color:var(--text);font-weight:600}
+.explain{background:var(--panel2);color:var(--muted);font-size:12.5px;line-height:1.55;padding:10px 11px;border-radius:8px;border:1px solid var(--line)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.drawer{position:fixed;inset:0 0 0 auto;width:min(520px,100%);padding:0;background:var(--bg);border-left:1px solid var(--line);box-shadow:-16px 0 40px rgba(0,0,0,.5);transform:translateX(101%);transition:.2s;display:flex;flex-direction:column}
 .drawer.open{transform:none}
-.drawer h2{font-size:20px;margin:17px 0 6px}
-.drawer label{font-size:12px;color:var(--muted);display:block;margin:16px 0 6px}
-.drawer textarea{width:100%;height:120px;resize:vertical}
-.actions{display:flex;gap:8px;margin-top:13px}
+.drawer-scroll{overflow:auto;padding:22px;flex:1;min-height:0}
+.drawer h2{font-size:18px;margin:15px 0 4px;font-weight:700}
+.drawer label{font-size:12px;color:var(--muted);display:block;margin:15px 0 6px;font-weight:600}
+.drawer textarea{width:100%;height:100px;resize:vertical}
+.actions{display:flex;gap:8px;margin-top:12px}
 .notice{font-size:12px;color:var(--muted2);margin:18px 0 0}
-.add textarea{width:100%;height:75px;margin:6px 0}
+.add textarea{width:100%;height:70px;margin:6px 0}
 .add select{width:100%;margin-bottom:6px}
 
-.switchrow{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);cursor:pointer;line-height:1.4}
+/* Chat transcript */
+.chat-thread{display:flex;flex-direction:column;gap:10px;max-height:340px;overflow-y:auto;padding:2px 2px 2px 0;margin-bottom:4px}
+.chat-turn{border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--panel2)}
+.chat-turn.user{background:rgba(96,165,250,.07);border-color:rgba(96,165,250,.25)}
+.chat-turn .chat-role{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);display:flex;justify-content:space-between}
+.chat-turn.user .chat-role{color:var(--blue)}
+.chat-turn .chat-time{font-weight:400;text-transform:none;letter-spacing:0}
+.chat-turn .chat-text{white-space:pre-wrap;font-size:12.5px;line-height:1.5;margin-top:5px;color:var(--text)}
+.chat-loading{color:var(--muted);font-size:12.5px;padding:10px 0}
+
+.switchrow{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);cursor:pointer;line-height:1.4}
 .switchrow input{position:absolute;opacity:0;width:0;height:0}
-.switchtrack{width:34px;height:20px;background:var(--panel2);border:1px solid var(--line);border-radius:99px;position:relative;flex-shrink:0;transition:background .15s,border-color .15s}
-.switchthumb{position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:var(--muted2);transition:transform .15s,background .15s}
-.switchrow input:checked + .switchtrack{background:rgba(96,165,250,.22);border-color:var(--blue-dim)}
-.switchrow input:checked + .switchtrack .switchthumb{transform:translateX(14px);background:var(--blue)}
+.switchtrack{width:32px;height:19px;background:var(--line);border:1px solid var(--line);border-radius:99px;position:relative;flex-shrink:0;transition:background .15s,border-color .15s}
+.switchthumb{position:absolute;top:1px;left:1px;width:15px;height:15px;border-radius:50%;background:#e5e7eb;box-shadow:0 1px 2px rgba(0,0,0,.4);transition:transform .15s}
+.switchrow input:checked + .switchtrack{background:var(--accent-dim);border-color:var(--accent-dim)}
+.switchrow input:checked + .switchtrack .switchthumb{transform:translateX(13px);background:#fff}
 .switchrow input:focus-visible + .switchtrack{outline:2px solid var(--blue-dim);outline-offset:2px}
 
 /* Analytics grid */
-.chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.chartcard{padding:16px 18px}
-.chartcard h3{font-size:12.5px;margin:0 0 3px;font-weight:700}
-.chartcard .chartsub{font-size:11.5px;color:var(--muted2);margin:0 0 14px}
+.chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.chartcard{padding:14px 16px}
+.chartcard h3{font-size:12.5px;margin:0 0 3px;font-weight:700;color:var(--text)}
+.chartcard .chartsub{font-size:11.5px;color:var(--muted);margin:0 0 13px}
 
 /* Bar rows */
 .barrow{display:flex;align-items:center;gap:10px;padding:6px 0}
 .barrow-label{width:96px;font-size:12px;color:var(--muted);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bartrack{flex:1;height:14px;background:var(--panel2);border-radius:4px;overflow:hidden}
-.barfill{height:100%;border-radius:4px;min-width:2px}
-.barrow-value{width:52px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
+.bartrack{flex:1;height:12px;background:var(--panel2);border-radius:4px;overflow:hidden;border:1px solid var(--line-soft)}
+.barfill{height:100%;border-radius:3px;min-width:2px}
+.barrow-value{width:52px;text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap;color:var(--text)}
 .barrow:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
 
 /* Stacked bar */
-.stackbar{display:flex;height:18px;border-radius:4px;overflow:hidden;gap:2px;background:var(--panel2)}
+.stackbar{display:flex;height:16px;border-radius:4px;overflow:hidden;gap:2px;background:var(--panel2);border:1px solid var(--line-soft)}
 .stackseg{height:100%;min-width:3px}
-.stacklegend{display:flex;gap:18px;margin-top:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.stacklegend{display:flex;gap:16px;margin-top:11px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .stacklegend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .stacklegend b{color:var(--text);font-weight:700;margin-left:5px;font-variant-numeric:tabular-nums}
 
@@ -121,13 +146,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .linewrap{position:relative}
 .linesvg{width:100%;height:150px;display:block;overflow:visible}
 .linegrid{stroke:var(--line-soft);stroke-width:1}
-.linearea{fill:var(--blue);fill-opacity:.1}
+.linearea{fill:var(--blue);fill-opacity:.12}
 .lineline{fill:none;stroke:var(--blue);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .linecrosshair{stroke:var(--muted2);stroke-width:1;opacity:0;pointer-events:none}
 .linedot{fill:var(--blue);stroke:var(--bg);stroke-width:2;opacity:0;pointer-events:none}
-.linetooltip{position:absolute;pointer-events:none;background:#0c1728;border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:12px;white-space:nowrap;opacity:0;transition:opacity .1s;transform:translate(-50%,-115%)}
-.linetooltip b{font-variant-numeric:tabular-nums;color:var(--text)}
-.linetooltip span{color:var(--muted2)}
+.linetooltip{position:absolute;pointer-events:none;background:var(--panel2);border:1px solid var(--line);color:#fff;border-radius:6px;padding:6px 10px;font-size:12px;white-space:nowrap;opacity:0;transition:opacity .1s;transform:translate(-50%,-115%)}
+.linetooltip b{font-variant-numeric:tabular-nums;color:#fff}
+.linetooltip span{color:#9ca3af}
 .lineaxis text{font-size:10px;fill:var(--muted2)}
 .chartempty{padding:30px 0;text-align:center;color:var(--muted2);font-size:12.5px}
 
@@ -147,14 +172,19 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </head>
 <body>
 <header>
-  <div class="brand">
-    <div class="mark">SLA</div>
+  <div class="titlerow">
     <div>
-      <h1>Escalation <span>SLA Tracker</span></h1>
-      <p>One risk-weighted, live queue for agents blocked on human input.</p>
+      <h1>Escalation Tracker</h1>
+      <p class="sub">Reflex org: surya-workspace</p>
     </div>
+    <div class="live demo" id="connection"><i></i>Dashboard demo</div>
   </div>
-  <div class="live demo" id="connection"><i></i>Dashboard demo</div>
+  <nav class="tabs">
+    <a class="tabitem active" href="#queue-section">Queue</a>
+    <a class="tabitem" href="#analytics">Analytics</a>
+    <a class="tabitem" href="#reflex">Reflex sync</a>
+    <a class="tabitem" href="#simulate">Simulate</a>
+  </nav>
 </header>
 <main>
   <section class="agent-summary">
@@ -164,7 +194,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <section class="metrics" id="metrics"></section>
   <section class="metrics secondary" id="metrics2"></section>
 
-  <section class="layout">
+  <section class="layout" id="queue-section">
     <div class="panel">
       <div class="toolbar">
         <h2>Human attention queue</h2>
@@ -174,7 +204,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
         </select>
         <input id="search" placeholder="Search sessions">
       </div>
-      <div id="queue"></div>
+      <div id="queue-body"></div>
     </div>
     <aside class="panel">
       <div class="section">
@@ -184,7 +214,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
         <div class="rule"><span>Medium risk</span><b>30 min SLA</b></div>
         <div class="rule"><span>Low risk</span><b>2 hr SLA</b></div>
       </div>
-      <div class="section">
+      <div class="section" id="reflex">
         <h3>Reflex</h3>
         <button class="ghost" id="sync">Sync needs-input sessions</button>
         <div class="detail" id="syncmsg">Configure local .env to enable live sync.</div>
@@ -198,7 +228,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
         </label>
         <div class="detail" id="autogenmsg"></div>
       </div>
-      <div class="section add">
+      <div class="section add" id="simulate">
         <h3>Simulate an agent question</h3>
         <textarea id="newq" placeholder="Question the agent asks…"></textarea>
         <select id="newrisk">
@@ -209,7 +239,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
     </aside>
   </section>
 
-  <div class="sectionhead"><h2>Analytics</h2><span>Recomputed from the same local data every refresh</span></div>
+  <div class="sectionhead" id="analytics"><h2>Analytics</h2><span>Recomputed from the same local data every refresh</span></div>
   <section class="chartgrid">
     <div class="panel chartcard">
       <h3>Risk distribution</h3>
@@ -257,6 +287,7 @@ let data = [];
 let sessions = [];
 let stats = null;
 let toastTimer = null;
+let openSessionId = null;
 const ACTIVITY_PHASES = [
   'Fetching reviews', 'Checking recent changes', 'Running validation',
   'Summarizing findings', 'Preparing the next step',
@@ -301,21 +332,21 @@ function render() {
   const breach = data.filter((x) => x.sla_state === 'breached').length;
   const oldest = Math.max(0, ...data.map((x) => x.wait_duration_seconds));
   $('#metrics').innerHTML = `
-    <div class="metric" style="--accent:var(--blue)"><span class="label">Awaiting response</span><b>${data.length}</b></div>
-    <div class="metric" style="--accent:var(--red)"><span class="label">SLA breached</span><b class="red">${breach}</b></div>
-    <div class="metric" style="--accent:var(--amber)"><span class="label">Longest wait</span><b class="amber">${duration(oldest)}</b></div>
-    <div class="metric" style="--accent:var(--green)"><span class="label">Queue risk points</span><b class="green">${data.reduce((n, x) => n + x.priority_score, 0)}</b></div>`;
+    <div class="metric"><span class="label">Awaiting response</span><b>${data.length}</b></div>
+    <div class="metric"><span class="label">SLA breached</span><b class="red">${breach}</b></div>
+    <div class="metric"><span class="label">Longest wait</span><b class="amber">${duration(oldest)}</b></div>
+    <div class="metric"><span class="label">Queue risk points</span><b class="green">${data.reduce((n, x) => n + x.priority_score, 0)}</b></div>`;
 
   if (stats) {
     const avg = stats.avg_resolution_seconds;
     $('#metrics2').innerHTML = `
-      <div class="metric" style="--accent:var(--blue)"><span class="label">Answered today</span><b>${stats.answered_today}</b><span class="sub">across demo + synced sessions</span></div>
-      <div class="metric" style="--accent:var(--blue)"><span class="label">Avg. resolution time</span><b>${avg == null ? '—' : durationShort(Math.round(avg))}</b><span class="sub">question asked → answer sent</span></div>`;
+      <div class="metric"><span class="label">Answered today</span><b>${stats.answered_today}</b><span class="sub">across demo + synced sessions</span></div>
+      <div class="metric"><span class="label">Avg. resolution time</span><b>${avg == null ? '—' : durationShort(Math.round(avg))}</b><span class="sub">question asked → answer sent</span></div>`;
   }
 
-  $('#queue').innerHTML = v.length ? `<table><thead><tr><th>Risk</th><th>Agent question</th><th>Owner</th><th>Wait / SLA</th><th></th></tr></thead><tbody>${v.map((x) => `<tr>
+  $('#queue-body').innerHTML = v.length ? `<table><thead><tr><th>Risk</th><th>Agent question</th><th>Owner</th><th>Wait / SLA</th><th></th></tr></thead><tbody>${v.map((x) => `<tr>
         <td><span class="pill ${x.risk_level}">${x.risk_level.toUpperCase()}</span><div class="detail">Score ${x.priority_score}</div></td>
-        <td><div class="question">${esc(preview(x.last_question) || 'Input required')}</div><div class="detail">${esc(x.agent_name)} · ${esc(x.id)}</div></td>
+        <td><div class="question">${esc(preview(x.last_question) || 'Input required')}</div><div class="detail mono">${esc(x.agent_name)} · ${esc(x.id)}</div></td>
         <td>${esc(x.owner)}</td>
         <td><span class="sla ${x.sla_state}">${duration(x.wait_duration_seconds)} / ${x.sla_minutes}m</span><div class="detail ${x.sla_state}">${x.sla_state.replace('_',' ').toUpperCase()}</div></td>
         <td><button onclick="openSession('${x.id}')">Answer</button></td>
@@ -465,21 +496,47 @@ async function load() {
   renderAnalytics();
 }
 
+function chatTimeLabel(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+async function loadTranscript(id) {
+  const thread = $('#chat-thread');
+  if (!thread) return;
+  try {
+    const turns = await fetch(`/api/sessions/${id}/transcript`).then((r) => r.json());
+    if (openSessionId !== id) return; // drawer moved on before this resolved
+    thread.innerHTML = turns.length ? turns.map((t) => `
+      <div class="chat-turn ${t.role === 'user' ? 'user' : ''}">
+        <div class="chat-role"><span>${t.role === 'user' ? 'You' : 'Agent'}</span><span class="chat-time">${esc(chatTimeLabel(t.timestamp))}</span></div>
+        <div class="chat-text">${esc(t.text)}</div>
+      </div>`).join('') : '<div class="chat-loading">No conversation history yet.</div>';
+    thread.scrollTop = thread.scrollHeight;
+  } catch {
+    if (openSessionId === id) thread.innerHTML = '<div class="chat-loading">Couldn’t load the conversation.</div>';
+  }
+}
+
 window.openSession = (id) => {
   const x = data.find((i) => i.id === id);
+  openSessionId = id;
   $('#drawer').classList.add('open');
-  $('#drawer').innerHTML = `<button class="ghost" onclick="closeDrawer()">← Queue</button>
+  $('#drawer').innerHTML = `<div class="drawer-scroll">
+    <button class="ghost" onclick="closeDrawer()">← Queue</button>
     <h2>${esc(x.agent_name)}</h2>
-    <p>${esc(x.id)} · ${esc(x.owner)}</p>
-    <label>Agent's message</label>
-    <div class="explain message-block">${esc(x.last_question)}</div>
-    <div class="explain"><b>Task</b><br>${esc(x.task_description)}<br><br><b>Agent context</b><br>${esc(x.log_tail)}</div>
+    <p class="mono">${esc(x.id)} · ${esc(x.owner)}</p>
+    <div class="explain" style="margin-top:12px"><b>Task</b><br>${esc(x.task_description)}<br><br><b>Agent context</b><br>${esc(x.log_tail)}</div>
+    <label>Full conversation</label>
+    <div class="chat-thread" id="chat-thread"><div class="chat-loading">Loading conversation…</div></div>
     <label>Answer to agent</label>
     <textarea id="answer" placeholder="Give a clear decision or constraint…"></textarea>
-    <label><input type="checkbox" id="slack"> Also notify Slack when configured</label>
-    <div class="actions"><button onclick="sendAnswer('${x.id}')">Send answer</button><button class="ghost" onclick="closeDrawer()">Cancel</button></div>`;
+    <label style="display:flex;align-items:center;gap:6px;font-weight:400"><input type="checkbox" id="slack" style="width:auto"> Also notify Slack when configured</label>
+    <div class="actions"><button onclick="sendAnswer('${x.id}')">Send answer</button><button class="ghost" onclick="closeDrawer()">Cancel</button></div>
+  </div>`;
+  loadTranscript(id);
 };
-window.closeDrawer = () => $('#drawer').classList.remove('open');
+window.closeDrawer = () => { $('#drawer').classList.remove('open'); openSessionId = null; };
 window.sendAnswer = async (id) => {
   const answer = $('#answer').value.trim();
   if (!answer) return notify('Enter an answer before sending.', true);

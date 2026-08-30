@@ -287,15 +287,16 @@ class ReflexClient:
             if a.get("status") == "needs_input" or (a.get("status") == "running" and a.get("turnState") == "idle")
         ]
 
-    async def last_message(self, agent_id: str) -> str | None:
-        """Reconstruct the agent's most recent complete chat message from its
-        event stream, so the dashboard can show the real question instead of
-        a generic placeholder. Dialects stream text differently: ACP/opencode
-        (this org's default agentType) sends the message as many small
-        `session/update` chunks sharing one `messageId` — join the last run
-        of those. Other dialects (native Claude Code, flat `message` events)
-        carry the whole text in one event's payload; extract_message_text
-        handles those as a fallback, walking backward from the newest event."""
+    async def conversation(self, agent_id: str) -> list[dict]:
+        """Full turn-by-turn transcript, oldest first: [{role, text, timestamp}, ...].
+        ACP/opencode agents (this org's default) carry the human's messages in
+        `session/prompt` events with a `prompt` array — the same event type
+        doubles as a turn-end acknowledgment carrying `stopReason` instead,
+        which isn't a chat message and is skipped. The assistant's replies
+        stream as many small `session/update` chunks sharing one `messageId`,
+        joined in arrival order. Other dialects (native Claude Code, flat
+        `message` events) fall back to one entry per event via
+        extract_message_text, since they don't chunk their messages."""
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get(f"{self.base_url()}/api/agents/{agent_id}/stream", headers=self.headers())
             response.raise_for_status()
@@ -303,27 +304,43 @@ class ReflexClient:
         if not isinstance(events, list):
             events = events.get("events", []) if isinstance(events, dict) else []
 
-        chunks = [
-            e for e in events
-            if e.get("type") == "session/update"
-            and isinstance(e.get("payload"), dict)
-            and (e["payload"].get("update") or {}).get("sessionUpdate") == "agent_message_chunk"
-        ]
-        if chunks:
-            last_message_id = chunks[-1]["payload"]["update"].get("messageId")
-            text = "".join(
-                (c["payload"]["update"].get("content") or {}).get("text", "")
-                for c in chunks
-                if c["payload"]["update"].get("messageId") == last_message_id
-            ).strip()
-            if text:
-                return text
+        turns: list[dict] = []
+        chunks_by_message: dict[str, list[dict]] = {}
+        acp_dialect = False
 
-        for event in reversed(events):
-            text = extract_message_text(event.get("payload"))
+        for event in events:
+            payload = event.get("payload")
+            if event.get("type") == "session/prompt" and isinstance(payload, dict) and isinstance(payload.get("prompt"), list):
+                text = "".join(b.get("text", "") for b in payload["prompt"] if isinstance(b, dict)).strip()
+                if text:
+                    turns.append({"role": "user", "text": text, "timestamp": event.get("timestamp")})
+                acp_dialect = True
+            elif event.get("type") == "session/update" and isinstance(payload, dict):
+                update = payload.get("update") or {}
+                if update.get("sessionUpdate") == "agent_message_chunk":
+                    message_id = update.get("messageId")
+                    if message_id:
+                        chunks_by_message.setdefault(message_id, []).append(event)
+                    acp_dialect = True
+
+        for chunk_events in chunks_by_message.values():
+            text = "".join((c["payload"]["update"].get("content") or {}).get("text", "") for c in chunk_events).strip()
             if text:
-                return text
-        return None
+                turns.append({"role": "assistant", "text": text, "timestamp": chunk_events[0].get("timestamp")})
+
+        if not acp_dialect:
+            for event in events:
+                text = extract_message_text(event.get("payload"))
+                if text:
+                    turns.append({"role": "assistant", "text": text, "timestamp": event.get("timestamp")})
+
+        turns.sort(key=lambda t: t["timestamp"] or 0)
+        return turns
+
+    async def last_message(self, agent_id: str) -> str | None:
+        """The agent's most recent complete message, for the queue preview."""
+        turns = await self.conversation(agent_id)
+        return turns[-1]["text"] if turns else None
 
     async def answer(self, agent_id: str, answer: str) -> None:
         """`control-response` answers a formal control-request handshake (e.g.
@@ -454,6 +471,24 @@ def get_sessions():
     with db() as connection:
         rows = connection.execute("SELECT * FROM sessions ORDER BY updated_at DESC").fetchall()
     return [present(row) for row in rows]
+
+
+@app.get("/api/sessions/{session_id}/transcript")
+async def get_transcript(session_id: str):
+    with db() as connection:
+        row = connection.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+    if row["source"] == "reflex" and row["reflex_agent_id"] and reflex.configured:
+        try:
+            turns = await reflex.conversation(row["reflex_agent_id"])
+            if turns:
+                return turns
+        except (httpx.HTTPError, HTTPException):
+            pass
+    # Demo sessions (and a fetch failure) fall back to the one message we
+    # already know locally, so the drawer never shows an empty transcript.
+    return [{"role": "assistant", "text": row["last_question"], "timestamp": None}]
 
 
 @app.post("/api/demo/sessions", status_code=201)
